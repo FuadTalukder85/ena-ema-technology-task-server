@@ -51,80 +51,101 @@ async function run() {
       };
 
       const { formattedDate, monthName } = formatDate(new Date());
-      // Check if an entry for the current date already exists
-      let existingTask = await tasks.findOne({ date: formattedDate });
-      if (existingTask) {
-        const updates = req.body;
-        for (const category in updates) {
-          if (existingTask[category]) {
-            const categoryData = existingTask[category];
-            const newExpenseKey = `expense${
-              Object.keys(categoryData).filter((key) =>
-                key.startsWith("expense")
-              ).length + 1
-            }`;
-            const newPurposeKey = `purpose${
-              Object.keys(categoryData).filter((key) =>
-                key.startsWith("purpose")
-              ).length + 1
-            }`;
-            if (updates[category].expense) {
-              categoryData[newExpenseKey] = updates[category].expense;
-            }
-            if (updates[category].purpose) {
-              categoryData[newPurposeKey] = updates[category].purpose;
-            }
-            if (updates[category].item) {
-              categoryData.item = updates[category].item;
-            }
-          } else {
-            existingTask[category] = { ...updates[category] };
-          }
-        }
-        await tasks.updateOne({ date: formattedDate }, { $set: existingTask });
-        return res.send(existingTask);
-      }
-      const lastEntry = await tasks
-        .find({})
-        .sort({ date: -1 })
-        .limit(1)
-        .toArray();
-      const defaultValues = lastEntry[0] || {};
-      const newTask = {
-        date: formattedDate,
-        month: monthName,
-        groceries: {
-          limit: defaultValues.groceries?.limit || 0,
-          ...req.body.groceries,
-        },
-        transportation: {
-          limit: defaultValues.transportation?.limit || 0,
-          ...req.body.transportation,
-        },
-        healthcare: {
-          limit: defaultValues.healthcare?.limit || 0,
-          ...req.body.healthcare,
-        },
-        utility: {
-          limit: defaultValues.utility?.limit || 0,
-          ...req.body.utility,
-        },
-        charity: {
-          limit: defaultValues.charity?.limit || 0,
-          ...req.body.charity,
-        },
-        miscellaneous: {
-          limit: defaultValues.miscellaneous?.limit || 0,
-          ...req.body.miscellaneous,
-        },
-      };
+      const { limits = {}, ...updates } = req.body;
 
-      const result = await tasks.insertOne(newTask);
-      res.send(result);
+      // Validate that limits is an object
+      if (typeof limits !== "object" || limits === null) {
+        return res
+          .status(400)
+          .json({ error: "Invalid or missing 'limits' field" });
+      }
+
+      try {
+        // Check if an entry for the current date exists
+        let existingTask = await tasks.findOne({ date: formattedDate });
+
+        if (existingTask) {
+          // Update existing entry
+          for (const category in updates) {
+            if (existingTask[category]) {
+              const categoryData = existingTask[category];
+              const newExpenseKey = `expense${
+                Object.keys(categoryData).filter((key) =>
+                  key.startsWith("expense")
+                ).length + 1
+              }`;
+              const newPurposeKey = `purpose${
+                Object.keys(categoryData).filter((key) =>
+                  key.startsWith("purpose")
+                ).length + 1
+              }`;
+
+              categoryData[newExpenseKey] = updates[category].expense || null;
+              categoryData[newPurposeKey] = updates[category].purpose || null;
+              categoryData.item = updates[category].item || null;
+            } else {
+              existingTask[category] = {
+                limit: limits[category] || existingTask[category]?.limit || "0",
+                ...updates[category],
+              };
+            }
+          }
+          await tasks.updateOne(
+            { date: formattedDate },
+            { $set: existingTask }
+          );
+          return res.send(existingTask);
+        }
+
+        // If no existing task for the date, create a new one
+        const previousTask = await tasks
+          .find({ month: monthName })
+          .sort({ date: -1 })
+          .limit(1)
+          .toArray();
+
+        const lastTask = previousTask[0] || null;
+
+        const newTask = {
+          date: formattedDate,
+          month: monthName,
+          groceries: {
+            limit: limits.groceries || lastTask?.groceries?.limit || "0",
+            ...updates.groceries,
+          },
+          transportation: {
+            limit:
+              limits.transportation || lastTask?.transportation?.limit || "0",
+            ...updates.transportation,
+          },
+          healthcare: {
+            limit: limits.healthcare || lastTask?.healthcare?.limit || "0",
+            ...updates.healthcare,
+          },
+          utility: {
+            limit: limits.utility || lastTask?.utility?.limit || "0",
+            ...updates.utility,
+          },
+          charity: {
+            limit: limits.charity || lastTask?.charity?.limit || "0",
+            ...updates.charity,
+          },
+          miscellaneous: {
+            limit:
+              limits.miscellaneous || lastTask?.miscellaneous?.limit || "0",
+            ...updates.miscellaneous,
+          },
+        };
+
+        const result = await tasks.insertOne(newTask);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Internal Server Error" });
+      }
     });
 
     // GET all tasks
-    //get all tasks
     app.get("/api/tasks", async (req, res) => {
       try {
         const result = await tasks.find().toArray();
