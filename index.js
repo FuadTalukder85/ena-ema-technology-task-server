@@ -122,6 +122,17 @@ async function run() {
       const result = await tasks.insertOne(newTask);
       res.send(result);
     });
+
+    // GET all tasks
+    //get all tasks
+    app.get("/api/tasks", async (req, res) => {
+      try {
+        const result = await tasks.find().toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch tasks" });
+      }
+    });
     // Root
     app.get("/", (req, res) => {
       const serverStatus = {
