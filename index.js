@@ -154,6 +154,75 @@ async function run() {
         res.status(500).json({ error: "Failed to fetch tasks" });
       }
     });
+    // Aggregated data
+    app.get("/api/aggregated-tasks", async (req, res) => {
+      try {
+        const tasksList = await tasks.find().toArray();
+
+        const categories = [
+          "groceries",
+          "transportation",
+          "healthcare",
+          "utility",
+          "charity",
+          "miscellaneous",
+        ];
+
+        // Group data by month
+        const aggregatedData = tasksList.reduce((acc, task) => {
+          const { month } = task;
+          if (!acc[month]) {
+            acc[month] = {
+              _id: task._id,
+              month,
+              totalLimit: 0,
+              totalExpense: 0,
+              groceriesExpense: 0,
+              transportationExpense: 0,
+              healthcareExpense: 0,
+              utilityExpense: 0,
+              charityExpense: 0,
+              miscellaneousExpense: 0,
+            };
+
+            categories.forEach((category) => {
+              if (task[category]) {
+                const categoryData = task[category];
+                acc[month].totalLimit += parseInt(categoryData.limit || 0, 10);
+              }
+            });
+          }
+          const current = acc[month];
+          categories.forEach((category) => {
+            if (task[category]) {
+              const categoryData = task[category];
+              Object.keys(categoryData).forEach((key) => {
+                if (key.startsWith("expense")) {
+                  current[`${category}Expense`] += parseInt(
+                    categoryData[key] || 0,
+                    10
+                  );
+                  current.totalExpense += parseInt(categoryData[key] || 0, 10);
+                }
+              });
+            }
+          });
+
+          return acc;
+        }, {});
+
+        const result = Object.values(aggregatedData);
+        result.forEach((item) => {
+          item.totalLimit = item.totalLimit.toLocaleString();
+        });
+
+        res.status(200).json(result);
+      } catch (error) {
+        console.error("Error in aggregation:", error);
+        res.status(500).json({ error: "Failed to aggregate tasks" });
+      }
+    });
+
     // Root
     app.get("/", (req, res) => {
       const serverStatus = {
