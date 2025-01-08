@@ -64,6 +64,15 @@ async function run() {
         // Check if an entry for the current date exists
         let existingTask = await tasks.findOne({ date: formattedDate });
 
+        const calculateTodayExpense = (categoryData) => {
+          return Object.keys(categoryData)
+            .filter((key) => key.startsWith("expense"))
+            .reduce(
+              (total, key) => total + parseFloat(categoryData[key] || 0),
+              0
+            );
+        };
+
         if (existingTask) {
           // Update existing entry
           for (const category in updates) {
@@ -83,11 +92,19 @@ async function run() {
               categoryData[newExpenseKey] = updates[category].expense || null;
               categoryData[newPurposeKey] = updates[category].purpose || null;
               categoryData.item = updates[category].item || null;
+
+              // Calculate and add todayExpense
+              categoryData.todayExpense = calculateTodayExpense(categoryData);
             } else {
               existingTask[category] = {
                 limit: limits[category] || existingTask[category]?.limit || "0",
                 ...updates[category],
               };
+
+              // Calculate and add todayExpense
+              existingTask[category].todayExpense = calculateTodayExpense(
+                existingTask[category]
+              );
             }
           }
           await tasks.updateOne(
@@ -112,28 +129,34 @@ async function run() {
           groceries: {
             limit: limits.groceries || lastTask?.groceries?.limit || "0",
             ...updates.groceries,
+            todayExpense: calculateTodayExpense(updates.groceries || {}),
           },
           transportation: {
             limit:
               limits.transportation || lastTask?.transportation?.limit || "0",
             ...updates.transportation,
+            todayExpense: calculateTodayExpense(updates.transportation || {}),
           },
           healthcare: {
             limit: limits.healthcare || lastTask?.healthcare?.limit || "0",
             ...updates.healthcare,
+            todayExpense: calculateTodayExpense(updates.healthcare || {}),
           },
           utility: {
             limit: limits.utility || lastTask?.utility?.limit || "0",
             ...updates.utility,
+            todayExpense: calculateTodayExpense(updates.utility || {}),
           },
           charity: {
             limit: limits.charity || lastTask?.charity?.limit || "0",
             ...updates.charity,
+            todayExpense: calculateTodayExpense(updates.charity || {}),
           },
           miscellaneous: {
             limit:
               limits.miscellaneous || lastTask?.miscellaneous?.limit || "0",
             ...updates.miscellaneous,
+            todayExpense: calculateTodayExpense(updates.miscellaneous || {}),
           },
         };
 
@@ -154,6 +177,15 @@ async function run() {
         res.status(500).json({ error: "Failed to fetch tasks" });
       }
     });
+
+    // DELETE expense by id
+    app.delete("/api/tasks/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await tasks.deleteOne(query);
+      res.send(result);
+    });
+
     // Aggregated data
     app.get("/api/aggregated-tasks", async (req, res) => {
       try {
