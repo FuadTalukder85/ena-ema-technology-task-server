@@ -64,47 +64,33 @@ async function run() {
         // Check if an entry for the current date exists
         let existingTask = await tasks.findOne({ date: formattedDate });
 
-        const calculateTodayExpense = (categoryData) => {
-          return Object.keys(categoryData)
-            .filter((key) => key.startsWith("expense"))
-            .reduce(
-              (total, key) => total + parseFloat(categoryData[key] || 0),
-              0
-            );
-        };
-
         if (existingTask) {
           // Update existing entry
           for (const category in updates) {
             if (existingTask[category]) {
               const categoryData = existingTask[category];
-              const newExpenseKey = `expense${
-                Object.keys(categoryData).filter((key) =>
-                  key.startsWith("expense")
-                ).length + 1
-              }`;
+
+              // Add expense to the existing total
+              categoryData.expense = (
+                parseFloat(categoryData.expense || 0) +
+                parseFloat(updates[category].expense || 0)
+              ).toString();
+
+              // Add dynamic purpose keys
               const newPurposeKey = `purpose${
                 Object.keys(categoryData).filter((key) =>
                   key.startsWith("purpose")
                 ).length + 1
               }`;
-
-              categoryData[newExpenseKey] = updates[category].expense || null;
               categoryData[newPurposeKey] = updates[category].purpose || null;
-              categoryData.item = updates[category].item || null;
 
-              // Calculate and add todayExpense
-              categoryData.todayExpense = calculateTodayExpense(categoryData);
+              categoryData.item =
+                updates[category].item || categoryData.item || null;
             } else {
               existingTask[category] = {
                 limit: limits[category] || existingTask[category]?.limit || "0",
                 ...updates[category],
               };
-
-              // Calculate and add todayExpense
-              existingTask[category].todayExpense = calculateTodayExpense(
-                existingTask[category]
-              );
             }
           }
           await tasks.updateOne(
@@ -123,40 +109,44 @@ async function run() {
 
         const lastTask = previousTask[0] || null;
 
+        const calculateTotalExpense = (categoryData) => {
+          return parseFloat(categoryData.expense || 0);
+        };
+
         const newTask = {
           date: formattedDate,
           month: monthName,
           groceries: {
             limit: limits.groceries || lastTask?.groceries?.limit || "0",
             ...updates.groceries,
-            todayExpense: calculateTodayExpense(updates.groceries || {}),
+            expense: calculateTotalExpense(updates.groceries || {}),
           },
           transportation: {
             limit:
               limits.transportation || lastTask?.transportation?.limit || "0",
             ...updates.transportation,
-            todayExpense: calculateTodayExpense(updates.transportation || {}),
+            expense: calculateTotalExpense(updates.transportation || {}),
           },
           healthcare: {
             limit: limits.healthcare || lastTask?.healthcare?.limit || "0",
             ...updates.healthcare,
-            todayExpense: calculateTodayExpense(updates.healthcare || {}),
+            expense: calculateTotalExpense(updates.healthcare || {}),
           },
           utility: {
             limit: limits.utility || lastTask?.utility?.limit || "0",
             ...updates.utility,
-            todayExpense: calculateTodayExpense(updates.utility || {}),
+            expense: calculateTotalExpense(updates.utility || {}),
           },
           charity: {
             limit: limits.charity || lastTask?.charity?.limit || "0",
             ...updates.charity,
-            todayExpense: calculateTodayExpense(updates.charity || {}),
+            expense: calculateTotalExpense(updates.charity || {}),
           },
           miscellaneous: {
             limit:
               limits.miscellaneous || lastTask?.miscellaneous?.limit || "0",
             ...updates.miscellaneous,
-            todayExpense: calculateTodayExpense(updates.miscellaneous || {}),
+            expense: calculateTotalExpense(updates.miscellaneous || {}),
           },
         };
 
@@ -165,6 +155,45 @@ async function run() {
       } catch (error) {
         console.error(error);
         res.status(500).json({ error: "Internal Server Error" });
+      }
+    });
+    // UPDATE tasks api
+    app.put("/api/tasks/:id", async (req, res) => {
+      const { id } = req.params;
+      const { expenseData } = req.body;
+
+      try {
+        // Ensure the task exists
+        const existingTask = await tasks.findOne({ _id: new ObjectId(id) });
+        if (!existingTask) {
+          return res.status(404).json({ error: "Task not found" });
+        }
+
+        // Update only the fields in expenseData
+        const updatedFields = {};
+        if (expenseData) {
+          for (const category in expenseData) {
+            updatedFields[`${category}.expense`] = expenseData[category];
+          }
+        }
+
+        // Save updated fields in the database
+        const result = await tasks.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updatedFields }
+        );
+
+        if (result.modifiedCount === 0) {
+          return res.status(400).json({ error: "No fields were updated" });
+        }
+
+        // Fetch the updated task
+        const updatedTask = await tasks.findOne({ _id: new ObjectId(id) });
+
+        return res.status(200).json(updatedTask);
+      } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Internal Server Error" });
       }
     });
 
