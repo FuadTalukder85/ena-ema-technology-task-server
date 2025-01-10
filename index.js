@@ -7,7 +7,7 @@ const port = process.env.PORT || 2025;
 // middleware
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: "https://ena-ema-tech-task.vercel.app",
     credentials: true,
   })
 );
